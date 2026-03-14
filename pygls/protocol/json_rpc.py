@@ -26,7 +26,7 @@ import sys
 import traceback
 import typing
 import uuid
-from concurrent.futures import Future
+from concurrent.futures import Future, InvalidStateError
 from functools import partial
 from typing import Any, Callable, Protocol, Type, Union, runtime_checkable
 
@@ -433,12 +433,19 @@ class JsonRPCProtocol:
             logger.warning('Received response to unknown message id "%s"', msg_id)
             return
 
-        if error is not None:
-            logger.debug('Received error response to message "%s": %s', msg_id, error)
-            future.set_exception(JsonRpcException.from_error(error))
-        else:
-            logger.debug('Received result for message "%s": %s', msg_id, result)
-            future.set_result(result)
+        try:
+            if error is not None:
+                logger.debug('Received error response to message "%s": %s', msg_id, error)
+                future.set_exception(JsonRpcException.from_error(error))
+            else:
+                logger.debug('Received result for message "%s": %s', msg_id, result)
+                future.set_result(result)
+        except InvalidStateError:
+            logger.warning(
+                'Dropped late response for message "%s" (future state: %s)',
+                msg_id,
+                future._state,
+            )
 
     def _serialize_message(self, data: Any) -> dict[str, Any]:
         """Function used to serialize data sent to the client."""
